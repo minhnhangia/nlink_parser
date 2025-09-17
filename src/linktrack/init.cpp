@@ -1,16 +1,7 @@
 #include "init.h"
 
-#include <nlink_parser/LinktrackAnchorframe0.h>
-#include <nlink_parser/LinktrackNodeframe0.h>
-#include <nlink_parser/LinktrackNodeframe1.h>
-#include <nlink_parser/LinktrackNodeframe2.h>
-#include <nlink_parser/LinktrackNodeframe3.h>
-#include <nlink_parser/LinktrackNodeframe4.h>
-#include <nlink_parser/LinktrackNodeframe5.h>
-#include <nlink_parser/LinktrackNodeframe6.h>
-#include <nlink_parser/LinktrackTagframe0.h>
-#include <ros/ros.h>
-#include <std_msgs/String.h>
+#include <cstring>
+#include <string>
 
 #include "nutils.h"
 #include "protocols.h"
@@ -21,20 +12,20 @@
   }
 
 namespace linktrack {
-nlink_parser::LinktrackAnchorframe0 g_msg_anchorframe0;
-nlink_parser::LinktrackTagframe0 g_msg_tagframe0;
-nlink_parser::LinktrackNodeframe0 g_msg_nodeframe0;
-nlink_parser::LinktrackNodeframe1 g_msg_nodeframe1;
-nlink_parser::LinktrackNodeframe2 g_msg_nodeframe2;
-nlink_parser::LinktrackNodeframe3 g_msg_nodeframe3;
-nlink_parser::LinktrackNodeframe4 g_msg_nodeframe4;
-nlink_parser::LinktrackNodeframe5 g_msg_nodeframe5;
-nlink_parser::LinktrackNodeframe6 g_msg_nodeframe6;
 
-serial::Serial *serial_;
+nlink_parser::msg::LinktrackAnchorframe0 g_msg_anchorframe0;
+nlink_parser::msg::LinktrackTagframe0 g_msg_tagframe0;
+nlink_parser::msg::LinktrackNodeframe0 g_msg_nodeframe0;
+nlink_parser::msg::LinktrackNodeframe1 g_msg_nodeframe1;
+nlink_parser::msg::LinktrackNodeframe2 g_msg_nodeframe2;
+nlink_parser::msg::LinktrackNodeframe3 g_msg_nodeframe3;
+nlink_parser::msg::LinktrackNodeframe4 g_msg_nodeframe4;
+nlink_parser::msg::LinktrackNodeframe5 g_msg_nodeframe5;
+nlink_parser::msg::LinktrackNodeframe6 g_msg_nodeframe6;
 
-Init::Init(NProtocolExtracter *protocol_extraction, serial::Serial *serial) {
-  serial_ = serial;
+Init::Init(NProtocolExtracter *protocol_extraction, serial::Serial *serial,
+           const rclcpp::Node::SharedPtr &node)
+    : node_(node), serial_(serial) {
   initDataTransmission();
   initAnchorFrame0(protocol_extraction);
   initTagFrame0(protocol_extraction);
@@ -47,26 +38,31 @@ Init::Init(NProtocolExtracter *protocol_extraction, serial::Serial *serial) {
   initNodeFrame6(protocol_extraction);
 }
 
-static void DTCallback(const std_msgs::String::ConstPtr &msg) {
-  if (serial_)
-    serial_->write(msg->data);
-}
-
 void Init::initDataTransmission() {
-  dt_sub_ =
-      nh_.subscribe("nlink_linktrack_data_transmission", 1000, DTCallback);
+  if (!node_) {
+    return;
+  }
+
+  dt_sub_ = node_->create_subscription<std_msgs::msg::String>(
+      "nlink_linktrack_data_transmission", rclcpp::QoS(1000),
+      [this](const std_msgs::msg::String::SharedPtr msg) {
+        if (serial_) {
+          serial_->write(msg->data);
+        }
+      });
 }
 
 void Init::initAnchorFrame0(NProtocolExtracter *protocol_extraction) {
   auto protocol = new NLT_ProtocolAnchorFrame0;
   protocol_extraction->AddProtocol(protocol);
-  protocol->SetHandleDataCallback([=] {
-    if (!publishers_[protocol]) {
-      auto topic = "nlink_linktrack_anchorframe0";
-      publishers_[protocol] =
-          nh_.advertise<nlink_parser::LinktrackAnchorframe0>(topic, 200);
-      TopicAdvertisedTip(topic);
+  protocol->SetHandleDataCallback([this] {
+    if (node_ && !anchorframe0_pub_) {
+      const auto topic = std::string("nlink_linktrack_anchorframe0");
+      anchorframe0_pub_ = node_->create_publisher<nlink_parser::msg::LinktrackAnchorframe0>(
+          topic, rclcpp::QoS(200));
+      TopicAdvertisedTip(node_->get_logger(), topic);
     }
+
     auto data = nlt_anchorframe0_.result;
     g_msg_anchorframe0.role = data.role;
     g_msg_anchorframe0.id = data.id;
@@ -84,19 +80,21 @@ void Init::initAnchorFrame0(NProtocolExtracter *protocol_extraction) {
       ARRAY_ASSIGN(msg_node.dis_arr, node->dis_arr)
       msg_nodes.push_back(msg_node);
     }
-    publishers_.at(protocol).publish(g_msg_anchorframe0);
+    if (anchorframe0_pub_) {
+      anchorframe0_pub_->publish(g_msg_anchorframe0);
+    }
   });
 }
 
 void Init::initTagFrame0(NProtocolExtracter *protocol_extraction) {
   auto protocol = new NLT_ProtocolTagFrame0;
   protocol_extraction->AddProtocol(protocol);
-  protocol->SetHandleDataCallback([=] {
-    if (!publishers_[protocol]) {
-      auto topic = "nlink_linktrack_tagframe0";
-      publishers_[protocol] =
-          nh_.advertise<nlink_parser::LinktrackTagframe0>(topic, 200);
-      TopicAdvertisedTip(topic);
+  protocol->SetHandleDataCallback([this] {
+    if (node_ && !tagframe0_pub_) {
+      const auto topic = std::string("nlink_linktrack_tagframe0");
+      tagframe0_pub_ = node_->create_publisher<nlink_parser::msg::LinktrackTagframe0>(
+          topic, rclcpp::QoS(200));
+      TopicAdvertisedTip(node_->get_logger(), topic);
     }
 
     const auto &data = g_nlt_tagframe0.result;
@@ -116,20 +114,21 @@ void Init::initTagFrame0(NProtocolExtracter *protocol_extraction) {
     ARRAY_ASSIGN(msg_data.angle_3d, data.angle_3d)
     ARRAY_ASSIGN(msg_data.quaternion, data.quaternion)
 
-    publishers_.at(protocol).publish(msg_data);
+    if (tagframe0_pub_) {
+      tagframe0_pub_->publish(msg_data);
+    }
   });
 }
 
 void Init::initNodeFrame0(NProtocolExtracter *protocol_extraction) {
   auto protocol = new NLT_ProtocolNodeFrame0;
   protocol_extraction->AddProtocol(protocol);
-  protocol->SetHandleDataCallback([=] {
-    if (!publishers_[protocol]) {
-      auto topic = "nlink_linktrack_nodeframe0";
-      publishers_[protocol] =
-          nh_.advertise<nlink_parser::LinktrackNodeframe0>(topic, 200);
-      TopicAdvertisedTip(topic);
-      ;
+  protocol->SetHandleDataCallback([this] {
+    if (node_ && !nodeframe0_pub_) {
+      const auto topic = std::string("nlink_linktrack_nodeframe0");
+      nodeframe0_pub_ = node_->create_publisher<nlink_parser::msg::LinktrackNodeframe0>(
+          topic, rclcpp::QoS(200));
+      TopicAdvertisedTip(node_->get_logger(), topic);
     }
     const auto &data = g_nlt_nodeframe0.result;
     auto &msg_data = g_msg_nodeframe0;
@@ -145,22 +144,24 @@ void Init::initNodeFrame0(NProtocolExtracter *protocol_extraction) {
       msg_node.id = node->id;
       msg_node.role = node->role;
       msg_node.data.resize(node->data_length);
-      memcpy(msg_node.data.data(), node->data, node->data_length);
+      std::memcpy(msg_node.data.data(), node->data, node->data_length);
     }
 
-    publishers_.at(protocol).publish(msg_data);
+    if (nodeframe0_pub_) {
+      nodeframe0_pub_->publish(msg_data);
+    }
   });
 }
 
 void Init::initNodeFrame1(NProtocolExtracter *protocol_extraction) {
   auto protocol = new NLT_ProtocolNodeFrame1;
   protocol_extraction->AddProtocol(protocol);
-  protocol->SetHandleDataCallback([=] {
-    if (!publishers_[protocol]) {
-      auto topic = "nlink_linktrack_nodeframe1";
-      publishers_[protocol] =
-          nh_.advertise<nlink_parser::LinktrackNodeframe1>(topic, 200);
-      TopicAdvertisedTip(topic);
+  protocol->SetHandleDataCallback([this] {
+    if (node_ && !nodeframe1_pub_) {
+      const auto topic = std::string("nlink_linktrack_nodeframe1");
+      nodeframe1_pub_ = node_->create_publisher<nlink_parser::msg::LinktrackNodeframe1>(
+          topic, rclcpp::QoS(200));
+      TopicAdvertisedTip(node_->get_logger(), topic);
     }
     const auto &data = g_nlt_nodeframe1.result;
     auto &msg_data = g_msg_nodeframe1;
@@ -181,19 +182,21 @@ void Init::initNodeFrame1(NProtocolExtracter *protocol_extraction) {
       ARRAY_ASSIGN(msg_node.pos_3d, node->pos_3d)
     }
 
-    publishers_.at(protocol).publish(msg_data);
+    if (nodeframe1_pub_) {
+      nodeframe1_pub_->publish(msg_data);
+    }
   });
 }
 
 void Init::initNodeFrame2(NProtocolExtracter *protocol_extraction) {
   auto protocol = new NLT_ProtocolNodeFrame2;
   protocol_extraction->AddProtocol(protocol);
-  protocol->SetHandleDataCallback([=] {
-    if (!publishers_[protocol]) {
-      auto topic = "nlink_linktrack_nodeframe2";
-      publishers_[protocol] =
-          nh_.advertise<nlink_parser::LinktrackNodeframe2>(topic, 200);
-      TopicAdvertisedTip(topic);
+  protocol->SetHandleDataCallback([this] {
+    if (node_ && !nodeframe2_pub_) {
+      const auto topic = std::string("nlink_linktrack_nodeframe2");
+      nodeframe2_pub_ = node_->create_publisher<nlink_parser::msg::LinktrackNodeframe2>(
+          topic, rclcpp::QoS(200));
+      TopicAdvertisedTip(node_->get_logger(), topic);
     }
     const auto &data = g_nlt_nodeframe2.result;
     auto &msg_data = g_msg_nodeframe2;
@@ -223,19 +226,21 @@ void Init::initNodeFrame2(NProtocolExtracter *protocol_extraction) {
       msg_node.rx_rssi = node->rx_rssi;
     }
 
-    publishers_.at(protocol).publish(msg_data);
+    if (nodeframe2_pub_) {
+      nodeframe2_pub_->publish(msg_data);
+    }
   });
 }
 
 void Init::initNodeFrame3(NProtocolExtracter *protocol_extraction) {
   auto protocol = new NLT_ProtocolNodeFrame3;
   protocol_extraction->AddProtocol(protocol);
-  protocol->SetHandleDataCallback([=] {
-    if (!publishers_[protocol]) {
-      auto topic = "nlink_linktrack_nodeframe3";
-      publishers_[protocol] =
-          nh_.advertise<nlink_parser::LinktrackNodeframe3>(topic, 200);
-      TopicAdvertisedTip(topic);
+  protocol->SetHandleDataCallback([this] {
+    if (node_ && !nodeframe3_pub_) {
+      const auto topic = std::string("nlink_linktrack_nodeframe3");
+      nodeframe3_pub_ = node_->create_publisher<nlink_parser::msg::LinktrackNodeframe3>(
+          topic, rclcpp::QoS(200));
+      TopicAdvertisedTip(node_->get_logger(), topic);
     }
     const auto &data = g_nlt_nodeframe3.result;
     auto &msg_data = g_msg_nodeframe3;
@@ -258,19 +263,21 @@ void Init::initNodeFrame3(NProtocolExtracter *protocol_extraction) {
       msg_node.rx_rssi = node->rx_rssi;
     }
 
-    publishers_.at(protocol).publish(msg_data);
+    if (nodeframe3_pub_) {
+      nodeframe3_pub_->publish(msg_data);
+    }
   });
 }
 
 void Init::initNodeFrame4(NProtocolExtracter *protocol_extraction) {
   auto protocol = new NLT_ProtocolNodeFrame4;
   protocol_extraction->AddProtocol(protocol);
-  protocol->SetHandleDataCallback([=] {
-    if (!publishers_[protocol]) {
-      auto topic = "nlink_linktrack_nodeframe4";
-      publishers_[protocol] =
-          nh_.advertise<nlink_parser::LinktrackNodeframe4>(topic, 200);
-      TopicAdvertisedTip(topic);
+  protocol->SetHandleDataCallback([this] {
+    if (node_ && !nodeframe4_pub_) {
+      const auto topic = std::string("nlink_linktrack_nodeframe4");
+      nodeframe4_pub_ = node_->create_publisher<nlink_parser::msg::LinktrackNodeframe4>(
+          topic, rclcpp::QoS(200));
+      TopicAdvertisedTip(node_->get_logger(), topic);
     }
     const auto &data = g_nlt_nodeframe4.result;
     auto &msg_data = g_msg_nodeframe4;
@@ -294,19 +301,21 @@ void Init::initNodeFrame4(NProtocolExtracter *protocol_extraction) {
       }
     }
 
-    publishers_.at(protocol).publish(msg_data);
+    if (nodeframe4_pub_) {
+      nodeframe4_pub_->publish(msg_data);
+    }
   });
 }
 
 void Init::initNodeFrame5(NProtocolExtracter *protocol_extraction) {
   auto protocol = new NLT_ProtocolNodeFrame5;
   protocol_extraction->AddProtocol(protocol);
-  protocol->SetHandleDataCallback([=] {
-    if (!publishers_[protocol]) {
-      auto topic = "nlink_linktrack_nodeframe5";
-      publishers_[protocol] =
-          nh_.advertise<nlink_parser::LinktrackNodeframe5>(topic, 200);
-      TopicAdvertisedTip(topic);
+  protocol->SetHandleDataCallback([this] {
+    if (node_ && !nodeframe5_pub_) {
+      const auto topic = std::string("nlink_linktrack_nodeframe5");
+      nodeframe5_pub_ = node_->create_publisher<nlink_parser::msg::LinktrackNodeframe5>(
+          topic, rclcpp::QoS(200));
+      TopicAdvertisedTip(node_->get_logger(), topic);
     }
     const auto &data = g_nlt_nodeframe5.result;
     auto &msg_data = g_msg_nodeframe5;
@@ -329,20 +338,21 @@ void Init::initNodeFrame5(NProtocolExtracter *protocol_extraction) {
       msg_node.rx_rssi = node->rx_rssi;
     }
 
-    publishers_.at(protocol).publish(msg_data);
+    if (nodeframe5_pub_) {
+      nodeframe5_pub_->publish(msg_data);
+    }
   });
 }
 
 void Init::initNodeFrame6(NProtocolExtracter *protocol_extraction) {
   auto protocol = new NLT_ProtocolNodeFrame6;
   protocol_extraction->AddProtocol(protocol);
-  protocol->SetHandleDataCallback([=] {
-    if (!publishers_[protocol]) {
-      auto topic = "nlink_linktrack_nodeframe6";
-      publishers_[protocol] =
-          nh_.advertise<nlink_parser::LinktrackNodeframe6>(topic, 200);
-      TopicAdvertisedTip(topic);
-      ;
+  protocol->SetHandleDataCallback([this] {
+    if (node_ && !nodeframe6_pub_) {
+      const auto topic = std::string("nlink_linktrack_nodeframe6");
+      nodeframe6_pub_ = node_->create_publisher<nlink_parser::msg::LinktrackNodeframe6>(
+          topic, rclcpp::QoS(200));
+      TopicAdvertisedTip(node_->get_logger(), topic);
     }
     const auto &data = g_nlt_nodeframe6.result;
     auto &msg_data = g_msg_nodeframe6;
@@ -358,10 +368,12 @@ void Init::initNodeFrame6(NProtocolExtracter *protocol_extraction) {
       msg_node.id = node->id;
       msg_node.role = node->role;
       msg_node.data.resize(node->data_length);
-      memcpy(msg_node.data.data(), node->data, node->data_length);
+      std::memcpy(msg_node.data.data(), node->data, node->data_length);
     }
 
-    publishers_.at(protocol).publish(msg_data);
+    if (nodeframe6_pub_) {
+      nodeframe6_pub_->publish(msg_data);
+    }
   });
 }
 

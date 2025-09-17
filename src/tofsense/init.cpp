@@ -1,5 +1,7 @@
-
 #include "init.h"
+
+#include <chrono>
+#include <string>
 
 #include "nlink_protocol.h"
 #include "nlink_unpack/nlink_tofsense_frame0.h"
@@ -23,7 +25,8 @@ void NTS_ProtocolFrame0::UnpackFrameData(const uint8_t *data) {
 }
 
 namespace tofsense {
-nlink_parser::TofsenseFrame0 g_msg_frame0;
+
+nlink_parser::msg::TofsenseFrame0 g_msg_frame0;
 
 #pragma pack(push, 1)
 struct {
@@ -35,10 +38,14 @@ struct {
 } g_command_read;
 #pragma pack(pop)
 
-Init::Init(NProtocolExtracter *protocol_extraction, serial::Serial *serial)
-    : serial_(serial) {
-  is_inquire_mode_ =
-      serial_ ? ros::param::param<bool>("~inquire_mode", true) : false;
+Init::Init(NProtocolExtracter *protocol_extraction, serial::Serial *serial,
+           const rclcpp::Node::SharedPtr &node)
+    : node_(node), serial_(serial) {
+  if (node_ && serial_) {
+    is_inquire_mode_ = node_->declare_parameter<bool>("inquire_mode", true);
+  } else {
+    is_inquire_mode_ = false;
+  }
 
   InitFrame0(protocol_extraction);
 }
@@ -46,19 +53,21 @@ Init::Init(NProtocolExtracter *protocol_extraction, serial::Serial *serial)
 void Init::InitFrame0(NProtocolExtracter *protocol_extraction) {
   static auto protocol_frame0_ = new NTS_ProtocolFrame0;
   protocol_extraction->AddProtocol(protocol_frame0_);
-  protocol_frame0_->SetHandleDataCallback([=] {
-    if (!publishers_[protocol_frame0_]) {
-      ros::NodeHandle nh_;
-      if (is_inquire_mode_) {
-        auto topic = "nlink_tofsense_cascade";
-        publishers_[protocol_frame0_] =
-            nh_.advertise<nlink_parser::TofsenseCascade>(topic, 50);
-        TopicAdvertisedTip(topic);
-      } else {
-        auto topic = "nlink_tofsense_frame0";
-        publishers_[protocol_frame0_] =
-            nh_.advertise<nlink_parser::TofsenseFrame0>(topic, 50);
-        TopicAdvertisedTip(topic);
+  protocol_frame0_->SetHandleDataCallback([this] {
+    if (node_) {
+      if (is_inquire_mode_ && !cascade_pub_) {
+        const auto topic = std::string("nlink_tofsense_cascade");
+        cascade_pub_ =
+            node_->create_publisher<nlink_parser::msg::TofsenseCascade>(
+                topic, rclcpp::QoS(50));
+        TopicAdvertisedTip(node_->get_logger(), topic);
+      }
+      if (!is_inquire_mode_ && !frame0_pub_) {
+        const auto topic = std::string("nlink_tofsense_frame0");
+        frame0_pub_ =
+            node_->create_publisher<nlink_parser::msg::TofsenseFrame0>(
+                topic, rclcpp::QoS(50));
+        TopicAdvertisedTip(node_->get_logger(), topic);
       }
     }
 
@@ -73,41 +82,48 @@ void Init::InitFrame0(NProtocolExtracter *protocol_extraction) {
 
     if (is_inquire_mode_) {
       frame0_map_[data.id] = g_msg_frame0;
-    } else {
-      publishers_.at(protocol_frame0_).publish(g_msg_frame0);
+    } else if (frame0_pub_) {
+      frame0_pub_->publish(g_msg_frame0);
     }
   });
 
-  if (is_inquire_mode_) {
-    timer_scan_ = nh_.createTimer(
-        ros::Duration(1.0 / frequency_),
-        [=](const ros::TimerEvent &) {
+  if (is_inquire_mode_ && node_ && serial_) {
+    timer_scan_ = node_->create_wall_timer(
+        std::chrono::duration<double>(1.0 / frequency_), [this]() {
           frame0_map_.clear();
           node_index_ = 0;
-          timer_read_.start();
-        },
-        false, true);
-    timer_read_ = nh_.createTimer(
-        ros::Duration(0.006),
-        [=](const ros::TimerEvent &) {
-          if (node_index_ >= 8) {
-            if (!frame0_map_.empty()) {
-              nlink_parser::TofsenseCascade msg_cascade;
-              for (const auto &msg : frame0_map_) {
-                msg_cascade.nodes.push_back(msg.second);
-              }
-              publishers_.at(protocol_frame0_).publish(msg_cascade);
-            }
-            timer_read_.stop();
-          } else {
-            g_command_read.id = node_index_;
-            auto data = reinterpret_cast<uint8_t *>(&g_command_read);
-            NLink_UpdateCheckSum(data, sizeof(g_command_read));
-            serial_->write(data, sizeof(g_command_read));
-            ++node_index_;
+          if (timer_read_) {
+            timer_read_->reset();
           }
-        },
-        false, false);
+        });
+    timer_read_ = node_->create_wall_timer(std::chrono::duration<double>(0.006),
+                                           [this]() {
+                                             if (node_index_ >= 8) {
+                                               if (!frame0_map_.empty() &&
+                                                   cascade_pub_) {
+                                                 nlink_parser::msg::TofsenseCascade
+                                                     msg_cascade;
+                                                 for (const auto &msg : frame0_map_) {
+                                                   msg_cascade.nodes.push_back(
+                                                       msg.second);
+                                                 }
+                                                 cascade_pub_->publish(msg_cascade);
+                                               }
+                                               if (timer_read_) {
+                                                 timer_read_->cancel();
+                                               }
+                                             } else {
+                                               g_command_read.id = node_index_;
+                                               auto data = reinterpret_cast<uint8_t *>(
+                                                   &g_command_read);
+                                               NLink_UpdateCheckSum(data,
+                                                                    sizeof(g_command_read));
+                                               serial_->write(data,
+                                                              sizeof(g_command_read));
+                                               ++node_index_;
+                                             }
+                                           });
+    timer_read_->cancel();
   }
 }
 

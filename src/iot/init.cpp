@@ -1,11 +1,11 @@
-
 #include "init.h"
+
+#include <string>
 
 #include "nlink_protocol.h"
 #include "nlink_unpack/nlink_iot_frame0.h"
 #include "nlink_unpack/nlink_utils.h"
 #include "nutils.h"
-#include <string.h>
 
 namespace {
 class ProtocolFrame0 : public NLinkProtocolVLength {
@@ -24,21 +24,25 @@ protected:
 } // namespace
 
 namespace iot {
-nlink_parser::IotFrame0 g_msg_iotframe0;
 
-Init::Init(NProtocolExtracter *protocol_extraction) {
+nlink_parser::msg::IotFrame0 g_msg_iotframe0;
+
+Init::Init(NProtocolExtracter *protocol_extraction,
+           const rclcpp::Node::SharedPtr &node)
+    : node_(node) {
   InitFrame0(protocol_extraction);
 }
 
 void Init::InitFrame0(NProtocolExtracter *protocol_extraction) {
   static auto protocol = new ProtocolFrame0;
   protocol_extraction->AddProtocol(protocol);
-  protocol->SetHandleDataCallback([=] {
-    if (!publishers_[protocol]) {
-      ros::NodeHandle nh_;
-      auto topic = "nlink_iot_frame0";
-      publishers_[protocol] = nh_.advertise<nlink_parser::IotFrame0>(topic, 50);
-      TopicAdvertisedTip(topic);
+  protocol->SetHandleDataCallback([this] {
+    if (node_ && !frame0_pub_) {
+      const auto topic = std::string("nlink_iot_frame0");
+      frame0_pub_ =
+          node_->create_publisher<nlink_parser::msg::IotFrame0>(topic,
+                                                                rclcpp::QoS(50));
+      TopicAdvertisedTip(node_->get_logger(), topic);
     }
 
     const auto &data = g_iot_frame0;
@@ -60,7 +64,9 @@ void Init::InitFrame0(NProtocolExtracter *protocol_extraction) {
                            src.user_data + src.user_data_len);
     }
 
-    publishers_.at(protocol).publish(g_msg_iotframe0);
+    if (frame0_pub_) {
+      frame0_pub_->publish(g_msg_iotframe0);
+    }
   });
 }
 
