@@ -1,37 +1,39 @@
 #ifndef TOFSENSEINIT_H
 #define TOFSENSEINIT_H
 
-#include <nlink_parser/TofsenseCascade.h>
-#include <nlink_parser/TofsenseFrame0.h>
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
 #include <serial/serial.h>
 
+#include <cstdint>
 #include <map>
-#include <unordered_map>
+#include <memory>
 
+#include "nlink_parser/msg/tofsense_cascade.hpp"
+#include "nlink_parser/msg/tofsense_frame0.hpp"
 #include "protocol_extracter/nprotocol_extracter.h"
 
 namespace tofsense {
 class Init {
 public:
-  explicit Init(NProtocolExtracter *protocol_extraction,
-                serial::Serial *serial);
+  explicit Init(NProtocolExtracter *protocol_extraction, serial::Serial *serial,
+                const rclcpp::Node::SharedPtr &node = nullptr);
 
 private:
   void InitFrame0(NProtocolExtracter *protocol_extraction);
 
-  std::unordered_map<NProtocolBase *, ros::Publisher> publishers_;
-
-  std::map<int, nlink_parser::TofsenseFrame0> frame0_map_;
-
+  rclcpp::Node::SharedPtr node_;
   serial::Serial *serial_;
+
+  rclcpp::Publisher<nlink_parser::msg::TofsenseCascade>::SharedPtr cascade_pub_;
+  rclcpp::Publisher<nlink_parser::msg::TofsenseFrame0>::SharedPtr frame0_pub_;
+
+  std::map<int, nlink_parser::msg::TofsenseFrame0> frame0_map_;
 
   const int frequency_ = 10;
   bool is_inquire_mode_ = true;
 
-  ros::NodeHandle nh_;
-  ros::Timer timer_scan_;
-  ros::Timer timer_read_;
+  rclcpp::TimerBase::SharedPtr timer_scan_;
+  rclcpp::TimerBase::SharedPtr timer_read_;
   uint8_t node_index_ = 0;
 };
 

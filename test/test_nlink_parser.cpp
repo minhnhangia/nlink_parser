@@ -5,19 +5,20 @@
 #include "../src/tofsense/init.h"
 #include "../src/tofsensem/init.h"
 #include <gtest/gtest.h>
-#include <nlink_parser/IotFrame0.h>
-#include <nlink_parser/LinktrackAnchorframe0.h>
-#include <nlink_parser/LinktrackAoaNodeframe0.h>
-#include <nlink_parser/LinktrackNodeframe0.h>
-#include <nlink_parser/LinktrackNodeframe1.h>
-#include <nlink_parser/LinktrackNodeframe2.h>
-#include <nlink_parser/LinktrackNodeframe3.h>
-#include <nlink_parser/LinktrackNodeframe4.h>
-#include <nlink_parser/LinktrackNodeframe5.h>
-#include <nlink_parser/LinktrackNodeframe6.h>
-#include <nlink_parser/LinktrackTagframe0.h>
-#include <nlink_parser/TofsenseFrame0.h>
-#include <nlink_parser/TofsenseMFrame0.h>
+#include <rclcpp/rclcpp.hpp>
+#include "nlink_parser/msg/iot_frame0.hpp"
+#include "nlink_parser/msg/linktrack_anchorframe0.hpp"
+#include "nlink_parser/msg/linktrack_aoa_nodeframe0.hpp"
+#include "nlink_parser/msg/linktrack_nodeframe0.hpp"
+#include "nlink_parser/msg/linktrack_nodeframe1.hpp"
+#include "nlink_parser/msg/linktrack_nodeframe2.hpp"
+#include "nlink_parser/msg/linktrack_nodeframe3.hpp"
+#include "nlink_parser/msg/linktrack_nodeframe4.hpp"
+#include "nlink_parser/msg/linktrack_nodeframe5.hpp"
+#include "nlink_parser/msg/linktrack_nodeframe6.hpp"
+#include "nlink_parser/msg/linktrack_tagframe0.hpp"
+#include "nlink_parser/msg/tofsense_frame0.hpp"
+#include "nlink_parser/msg/tofsense_m_frame0.hpp"
 #include <vector>
 
 static const double kAbsError = 0.001;
@@ -32,15 +33,15 @@ static const double kAbsError = 0.001;
   }
 
 namespace linktrack {
-extern nlink_parser::LinktrackAnchorframe0 g_msg_anchorframe0;
-extern nlink_parser::LinktrackTagframe0 g_msg_tagframe0;
-extern nlink_parser::LinktrackNodeframe0 g_msg_nodeframe0;
-extern nlink_parser::LinktrackNodeframe1 g_msg_nodeframe1;
-extern nlink_parser::LinktrackNodeframe2 g_msg_nodeframe2;
-extern nlink_parser::LinktrackNodeframe3 g_msg_nodeframe3;
-extern nlink_parser::LinktrackNodeframe4 g_msg_nodeframe4;
-extern nlink_parser::LinktrackNodeframe5 g_msg_nodeframe5;
-extern nlink_parser::LinktrackNodeframe6 g_msg_nodeframe6;
+extern nlink_parser::msg::LinktrackAnchorframe0 g_msg_anchorframe0;
+extern nlink_parser::msg::LinktrackTagframe0 g_msg_tagframe0;
+extern nlink_parser::msg::LinktrackNodeframe0 g_msg_nodeframe0;
+extern nlink_parser::msg::LinktrackNodeframe1 g_msg_nodeframe1;
+extern nlink_parser::msg::LinktrackNodeframe2 g_msg_nodeframe2;
+extern nlink_parser::msg::LinktrackNodeframe3 g_msg_nodeframe3;
+extern nlink_parser::msg::LinktrackNodeframe4 g_msg_nodeframe4;
+extern nlink_parser::msg::LinktrackNodeframe5 g_msg_nodeframe5;
+extern nlink_parser::msg::LinktrackNodeframe6 g_msg_nodeframe6;
 } // namespace linktrack
 
 TEST(NLinkParser, linktrack) {
@@ -353,7 +354,7 @@ TEST(NLinkParser, linktrack) {
 }
 
 namespace tofsense {
-extern nlink_parser::TofsenseFrame0 g_msg_frame0;
+extern nlink_parser::msg::TofsenseFrame0 g_msg_frame0;
 }
 
 TEST(NLinkParser, tofsense) {
@@ -375,7 +376,7 @@ TEST(NLinkParser, tofsense) {
 }
 
 namespace tofsensem {
-extern nlink_parser::TofsenseMFrame0 g_msg_tofmframe0;
+extern nlink_parser::msg::TofsenseMFrame0 g_msg_tofmframe0;
 }
 
 TEST(NLinkParser, tofsensem) {
@@ -436,7 +437,7 @@ TEST(NLinkParser, tofsensem) {
 }
 
 namespace linktrack_aoa {
-extern nlink_parser::LinktrackAoaNodeframe0 g_msg_aoa_nodeframe0;
+extern nlink_parser::msg::LinktrackAoaNodeframe0 g_msg_aoa_nodeframe0;
 }
 
 TEST(nlink_parser, linktrack_aoa) {
@@ -474,7 +475,7 @@ TEST(nlink_parser, linktrack_aoa) {
 }
 
 namespace iot {
-extern nlink_parser::IotFrame0 g_msg_iotframe0;
+extern nlink_parser::msg::IotFrame0 g_msg_iotframe0;
 }
 
 TEST(nlink_parser, iot) {
@@ -504,7 +505,8 @@ TEST(nlink_parser, iot) {
 // Run all the tests that were declared with TEST()
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
-  ros::init(argc, argv, "test_nlink_parser");
-  ros::NodeHandle nh;
-  return RUN_ALL_TESTS();
+  rclcpp::init(argc, argv);
+  auto result = RUN_ALL_TESTS();
+  rclcpp::shutdown();
+  return result;
 }
