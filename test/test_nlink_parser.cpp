@@ -21,6 +21,11 @@
 #include "nlink_parser/msg/tofsense_m_frame0.hpp"
 #include <vector>
 
+extern "C" {
+#include "../src/utils/nlink_unpack/nlink_utils.h"
+#include "../src/utils/nlink_unpack/nlink_linktrack_aoa_nodeframe0.h"
+}
+
 static const double kAbsError = 0.001;
 
 #define COMPARE_ARRAY(SRC, DEST, kAbsError)                                    \

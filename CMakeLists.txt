@@ -38,11 +38,8 @@ set(msg_files
   "msg/LinktrackAoaNodeframe0.msg"
   "msg/LinktrackNode4Anchor.msg"
   "msg/LinktrackNode4Tag.msg"
-  "msg/LinktrackNodeframe4.msg"
   "msg/LinktrackNode5.msg"
-  "msg/LinktrackNodeframe5.msg"
   "msg/LinktrackNode6.msg"
-  "msg/LinktrackNodeframe6.msg"
   "msg/TofsenseMFrame0.msg"
   "msg/TofsenseMFrame0Pixel.msg"
   "msg/IotFrame0.msg"
@@ -159,6 +156,12 @@ if(BUILD_TESTING)
     rosidl_target_interfaces(nlink_parser_test ${PROJECT_NAME} "rosidl_typesupport_cpp")
   endif()
 endif()
+
+install(TARGETS nutils
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
 
 install(TARGETS
   linktrack
